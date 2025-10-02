@@ -56,6 +56,49 @@ class BPlusTreeFile:
     def remove(self, key : str):
         pass
 
+    # Private Methods
+
+    def __search_rec(self, key : str, node_pos : int):
+        node = self.__read_node(node_pos)
+
+        pos = 0
+        for i in range(node.count):
+            if key >= node.entries[i]:
+                pos += 1
+            else:
+                break
+
+        if not node.is_last_level:
+            return self.__search_rec(key, pos)
+        else:
+            page = self.__read_data_page( node.children[pos])
+            record = search_in_page(page.records, page.count, key)
+            return record
+
+    def __range_search_rec(self, begin_key : str, end_key : str, node_pos : int):
+        records = []
+        node = self.__read_node(node_pos)
+
+        pos = 0
+        for i in range(node.count):
+            if begin_key >= node.entries[i]:
+                pos += 1
+            else:
+                break
+
+        if not node.is_last_level:
+            return self.__search_rec(begin_key, pos)
+        else:
+            page = self.__read_data_page(node.children[pos])
+            for i in range(page.count):
+                if page.next_page != -1:
+                    page = self.__pass_page(page.next_page)
+                else:
+                    record = search_in_page(page.records, page.count, begin_key)
+                    if record and end_key <= record.track_id:
+                        records.append(record)
+            return records
+
     # Aux Methods
 
     def __read_node(self, node_pos : int):
@@ -96,44 +139,3 @@ class BPlusTreeFile:
         if next_index is None or next_index < 0:
             return DataPage([], 0, -1)
         return self.__read_data_page(next_index)
-
-    def __search_rec(self, key : str, node_pos : int):
-        node = self.__read_node(node_pos)
-
-        pos = 0
-        for i in range(node.count):
-            if key >= node.entries[i]:
-                pos += 1
-            else:
-                break
-
-        if not node.is_last_level:
-            return self.__search_rec(key, pos)
-        else:
-            page = self.__read_data_page( node.children[pos])
-            record = search_in_page(page.records, page.count, key)
-            return record
-
-    def __range_search_rec(self, begin_key : str, end_key : str, node_pos : int):
-        records = []
-        node = self.__read_node(node_pos)
-
-        pos = 0
-        for i in range(node.count):
-            if begin_key >= node.entries[i]:
-                pos += 1
-            else:
-                break
-
-        if not node.is_last_level:
-            return self.__search_rec(begin_key, pos)
-        else:
-            page = self.__read_data_page(node.children[pos])
-            for i in range(page.count):
-                if page.next_page[i] != -1:
-                    page = self.__pass_page(page.next_page[i])
-                else:
-                    record = search_in_page(page.records, page.count, begin_key)
-                    if record and end_key <= record.track_id:
-                        records.append(record)
-            return records
