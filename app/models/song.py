@@ -17,7 +17,7 @@ class Song:
         self.instrumentalness = instrumentalness
         self.duration_ms = duration_ms
 
-    def pask(self):
+    def pack(self):
         record = struct.pack(self.FMT, self.track_id.encode(), self.track_name.encode(), self.track_artist.encode(), self.track_popularity,
                              self.track_album_id.encode(), self.track_album_name.encode(), self.track_album_release_date.encode(), self.acousticness,
                              self.instrumentalness, self.duration_ms)
@@ -27,15 +27,16 @@ class Song:
     def unpack(data):
         if not data:
             return None
-        track_id, track_name, track_artist, track_popularity, track_album_id, track_album_name, track_album_release_date, acousticness, instrumentalness, duration_ms = struct.unpack(Song.FMT, data)
+        unpacked = struct.unpack(Song.FMT, data)
+        track_id, track_name, track_artist, track_popularity, track_album_id, track_album_name, track_album_release_date, acousticness, instrumentalness, duration_ms = unpacked
         return Song(
-            track_id=track_id.decode().strip(),
-            track_name=track_name.decode().strip(),
-            track_artist=track_artist.decode().strip(),
+            track_id=track_id.decode('utf-8').rstrip('\x00').strip(),
+            track_name=track_name.decode('utf-8').rstrip('\x00').strip(),
+            track_artist=track_artist.decode('utf-8').rstrip('\x00').strip(),
             track_popularity=track_popularity,
-            track_album_id=track_album_id.decode().strip(),
-            track_album_name=track_album_name.decode().strip(),
-            track_album_release_date=track_album_release_date.decode().strip(),
+            track_album_id=track_album_id.decode('utf-8').rstrip('\x00').strip(),
+            track_album_name=track_album_name.decode('utf-8').rstrip('\x00').strip(),
+            track_album_release_date=track_album_release_date.decode('utf-8').rstrip('\x00').strip(),
             acousticness=acousticness,
             instrumentalness=instrumentalness,
             duration_ms=duration_ms
