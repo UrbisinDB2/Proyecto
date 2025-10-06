@@ -1,7 +1,7 @@
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
-from app.routes import parser_sql
+from app.routes import parser_sql, database
 
 app = FastAPI(
     title="Mini Database Manager",
@@ -13,3 +13,4 @@ async def root():
     return JSONResponse(status_code=200, content="Hello from Mini Database Manager")
 
 app.include_router(parser_sql.router, prefix="/parser")
+app.include_router(database.router, prefix="/database")
