@@ -1,23 +1,183 @@
 from fastapi import APIRouter
 from fastapi.responses import JSONResponse
+from pathlib import Path
+import re
+import importlib
 
 from app.models.parsed_query import ParsedQuery
+from app.engines.bplustree import BPlusTreeFile
 
 router = APIRouter()
 
-def
+
+def generate_record(schema: dict) -> str:
+    table = schema["table"]
+    cols  = schema["columns"]
+    class_name = table[:1].upper() + table[1:]
+
+    def py_hint(ctype: str) -> str:
+        ct = ctype.lower()
+        if ct == "int": return "int"
+        if ct == "float": return "float"
+        if ct == "date": return "str"
+        if ct.startswith("varchar("): return "str"
+        if ct == "array(float)": return "list[float]"
+        return "object"
+
+    def fmt_token(ctype: str):
+        ct = ctype.lower()
+        if ct == "int": return "i"
+        if ct == "float": return "f"
+        if ct == "date": return "12s"
+        if ct.startswith("varchar("):
+            n = int(re.search(r"varchar\((\d+)\)", ct).group(1))
+            return f"{n}s"
+        if ct == "array(float)": return ["f", "f"]
+        raise ValueError(f"Tipo no soportado: {ctype}")
+
+    fmt_parts = []
+    init_names: list[str] = []          # ["id", "nombre", ...]
+    init_types: list[str] = []          # ["int", "str", ...]  <-- SOLO EL TIPO
+    prepack_lines = []
+    pack_args_code = []
+    unpack_tuple_vars = []
+    post_unpack_lines = []
+    ctor_kwargs = []
+
+    for c in cols:
+        name = c["name"]
+        ctype = c["type"]
+
+        init_names.append(name)
+        init_types.append(py_hint(ctype))
+
+        token = fmt_token(ctype)
+        if isinstance(token, list): fmt_parts.extend(token)
+        else: fmt_parts.append(token)
+
+        ct = ctype.lower()
+        if ct.startswith("varchar("):
+            n = int(re.search(r"varchar\((\d+)\)", ct).group(1))
+            prepack_lines.append(
+                f"{name}_bytes = (self.{name} or '').encode('utf-8')[:{n}].ljust({n}, b'\\x00')"
+            )
+            pack_args_code.append(f"{name}_bytes")
+            tup_var = f"_{name}_raw"
+            unpack_tuple_vars.append(tup_var)
+            post_unpack_lines.append(
+                f"{name} = {tup_var}.decode('utf-8', errors='ignore').rstrip('\\x00').strip()"
+            )
+            ctor_kwargs.append(f"{name}={name}")
+
+        elif ct == "date":
+            prepack_lines.append(
+                f"{name}_bytes = (self.{name} or '').encode('utf-8')[:12].ljust(12, b'\\x00')"
+            )
+            pack_args_code.append(f"{name}_bytes")
+            tup_var = f"_{name}_raw"
+            unpack_tuple_vars.append(tup_var)
+            post_unpack_lines.append(
+                f"{name} = {tup_var}.decode('utf-8', errors='ignore').rstrip('\\x00').strip()"
+            )
+            ctor_kwargs.append(f"{name}={name}")
+
+        elif ct == "int":
+            pack_args_code.append(f"self.{name}")
+            tup_var = f"_{name}"
+            unpack_tuple_vars.append(tup_var)
+            post_unpack_lines.append(f"{name} = {tup_var}")
+            ctor_kwargs.append(f"{name}={name}")
+
+        elif ct == "float":
+            pack_args_code.append(f"float(self.{name})")
+            tup_var = f"_{name}"
+            unpack_tuple_vars.append(tup_var)
+            post_unpack_lines.append(f"{name} = {tup_var}")
+            ctor_kwargs.append(f"{name}={name}")
+
+        elif ct == "array(float)":
+            prepack_lines.append(
+                f"{name}_vals = (self.{name} or [0.0, 0.0])\n"
+                f"        assert len({name}_vals) == 2, 'El array {name} debe tener longitud 2'"
+            )
+            pack_args_code.append(f"float({name}_vals[0])")
+            pack_args_code.append(f"float({name}_vals[1])")
+            v1, v2 = f"_{name}_0", f"_{name}_1"
+            unpack_tuple_vars.extend([v1, v2])
+            post_unpack_lines.append(f"{name} = [{v1}, {v2}]")
+            ctor_kwargs.append(f"{name}={name}")
+
+    fmt_str = '"' + "".join(fmt_parts) + '"'
+    # Firma correcta: "id: int, nombre: str, ..."
+    init_sig = ", ".join([f"{n}: {t}" for n, t in zip(init_names, init_types)])
+    tuple_vars_str = ", ".join(unpack_tuple_vars)
+    ctor_kwargs_str = ",\n                ".join(ctor_kwargs)
+
+    source = (
+        "import struct\n\n\n"
+        f"class {class_name}:\n"
+        f"    FMT = {fmt_str}\n"
+        f"    RECORD_SIZE = struct.calcsize(FMT)\n\n"
+        f"    def __init__(self, {init_sig}):\n" +
+        "".join([f"        self.{n} = {n}\n" for n in init_names]) + "\n" +
+        "    def pack(self):\n" +
+        "".join([f"        {line}\n" for line in prepack_lines]) +
+        "        record = struct.pack(\n"
+        "            self.FMT,\n" +
+        "".join([f"            {arg},\n" for arg in pack_args_code]) +
+        "        )\n"
+        "        return record\n\n"
+        "    @staticmethod\n"
+        "    def unpack(data):\n"
+        f"        if not data or len(data) < {class_name}.RECORD_SIZE:\n"
+        "            return None\n\n"
+        "        try:\n"
+        f"            unpacked = struct.unpack({class_name}.FMT, data)\n"
+        f"            {tuple_vars_str} = unpacked\n" +
+        "".join([f"            {line}\n" for line in post_unpack_lines]) +
+        "\n"
+        f"            return {class_name}(\n"
+        f"                {ctor_kwargs_str}\n"
+        "            )\n"
+        "        except Exception:\n"
+        "            return None\n\n"
+        "    def __repr__(self):\n"
+        f"        return f\"{class_name}(" +
+        ", ".join([f"{n}={{self.{n}!r}}" for n in init_names[:3]]) +
+        "... )\"\n"
+    )
+    return source
 
 @router.post("/", response_class=JSONResponse)
 async def run_query(query: ParsedQuery):
     op = query.op
 
     if op == 0:
-        pass
+        schema = dict(query)
+        record = generate_record(schema)
+        filename = str(schema["table"]).lower() + ".py"
+        base_dir = Path(__file__).resolve().parents[2]
+        out_dir = base_dir/"data"/"records"
+        out_path = out_dir/filename
+        out_path.write_text(record, encoding="utf-8")
+
+        return JSONResponse(status_code=200, content=f'Created record: {schema["table"]}')
     elif op == 1:
         pass
     elif op == 2:
         pass
     elif op == 3:
-        pass
+        q = dict(query)
+        index = q["index"]
+        table_name = q["table"].lower()
+
+        module_path = f"data.records.{table_name}"
+        record_module = importlib.import_module(module_path)
+
+        record_class = getattr(record_module, table_name.capitalize())
+
+        if index["type"] == "bplustree":
+            print("Adding values using bplustree index.")
+
     elif op == 4:
         pass

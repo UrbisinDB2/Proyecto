@@ -14,7 +14,7 @@ NUM_RECORDS = 3000
 
 # Importar módulos necesarios
 try:
-    from app.models.song import Song
+    from data.records.song import Song
     from app.engines.bplustree import BPlusTreeFile
 except ImportError as e:
     print(f"ERROR: No se pudo importar módulos necesarios: {e}")

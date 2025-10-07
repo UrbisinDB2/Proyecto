@@ -20,8 +20,6 @@ class Song:
         self.duration_ms = duration_ms
 
     def pack(self):
-        """Empaqueta el Song a bytes con padding correcto"""
-        # Codificar y truncar/rellenar cada campo al tamaño correcto
         track_id_bytes = self.track_id.encode('utf-8')[:30].ljust(30, b'\x00')
         track_name_bytes = self.track_name.encode('utf-8')[:100].ljust(100, b'\x00')
         track_artist_bytes = self.track_artist.encode('utf-8')[:40].ljust(40, b'\x00')
@@ -46,7 +44,6 @@ class Song:
 
     @staticmethod
     def unpack(data):
-        """Desempaqueta bytes a un objeto Song"""
         if not data or len(data) < Song.RECORD_SIZE:
             return None
 
