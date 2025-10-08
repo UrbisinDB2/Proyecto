@@ -41,3 +41,9 @@
 *.dwo
 
 .idea/
+
+bplustre/
+exthashing/
+isam/
+rtree/
+seqfile/

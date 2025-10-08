@@ -2,10 +2,12 @@ from fastapi import APIRouter
 from fastapi.responses import JSONResponse
 from pathlib import Path
 import re
-import importlib
+import csv, inspect
 
 from app.models.parsed_query import ParsedQuery
-from app.engines.bplustree import BPlusTreeFile
+from app.engines.factory import ENGINE_BUILDERS
+from app.settings import DATA_ROOT, BPLUSTREE_DIR
+from app.data.records.song import Song
 
 router = APIRouter()
 
@@ -148,6 +150,75 @@ def generate_record(schema: dict) -> str:
     )
     return source
 
+def _csv_path_for_song(q_file: str | None) -> Path:
+    datasets = DATA_ROOT / "datasets"
+    if q_file:
+        p = Path(q_file)
+        if not p.is_absolute():
+            p = datasets / p
+        return p
+    return datasets / "spotify_songs.csv"  # por defecto
+
+def _import_songs_from_csv(csv_path: Path, index: str) -> dict:
+    table = "song"
+    spec = {"type": index, "key_attr": "track_id", "key_len": 30}
+    engine = ENGINE_BUILDERS[index](table, spec)  # builder tuyo
+
+    record_cls = Song
+    params = [p.name for p in inspect.signature(record_cls.__init__).parameters.values() if p.name != "self"]
+    pset   = {p.lower(): p for p in params}
+
+    inserted = skipped = 0
+
+    int_fields   = {"track_popularity", "duration_ms"}
+    float_fields = {"acousticness", "instrumentalness"}
+
+    with csv_path.open("r", encoding="utf-8", errors="ignore", newline="") as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            try:
+                kwargs = {}
+                for k, v in row.items():
+                    if not k:
+                        continue
+                    key = pset.get(k.strip().lower())
+                    if key is None:
+                        continue
+                    val = (v or "").strip()
+                    kwargs[key] = val
+
+                # casteos
+                for fn in int_fields:
+                    if fn in kwargs and kwargs[fn] not in (None, ""):
+                        try:
+                            kwargs[fn] = int(float(kwargs[fn]))
+                        except Exception:
+                            pass
+                for fn in float_fields:
+                    if fn in kwargs and kwargs[fn] not in (None, ""):
+                        try:
+                            kwargs[fn] = float(kwargs[fn])
+                        except Exception:
+                            pass
+
+                if not kwargs.get("track_id"):
+                    raise ValueError("fila sin track_id")
+
+                rec = record_cls(**kwargs)
+                engine.add(rec)
+                inserted += 1
+            except Exception:
+                skipped += 1
+
+    return {
+        "table": table,
+        "engine": index,
+        "inserted": inserted,
+        "skipped": skipped,
+        "datafile": (BPLUSTREE_DIR / "song.dat").as_posix(),
+        "indexfile": (BPLUSTREE_DIR / "song.idx").as_posix(),
+    }
+
 @router.post("/", response_class=JSONResponse)
 async def run_query(query: ParsedQuery):
     op = query.op
@@ -169,15 +240,11 @@ async def run_query(query: ParsedQuery):
     elif op == 3:
         q = dict(query)
         index = q["index"]
-        table_name = q["table"].lower()
-
-        module_path = f"data.records.{table_name}"
-        record_module = importlib.import_module(module_path)
-
-        record_class = getattr(record_module, table_name.capitalize())
 
         if index["type"] == "bplustree":
-            print("Adding values using bplustree index.")
+            csv_path = _csv_path_for_song(q.get("file"))
+            stats = _import_songs_from_csv(csv_path, str(index["type"]))
+            return JSONResponse(status_code=200, content=stats)
 
     elif op == 4:
         pass

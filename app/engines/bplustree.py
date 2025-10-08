@@ -1,123 +1,87 @@
 import struct
 import os
-from typing import Callable, Any, Optional
+from app.data.records.song import Song
 
 R = 40  # Hijos por nodo índice
 M = 20  # Registros por página datos
+KEY_LEN = 30
 
 
 class Node:
-    # El formato (FMT) depende de KEY_LEN. Lo seteamos en tiempo de ejecución.
-    FMT: str = ""
-    SIZE: int = 0
+    FMT = "?i" + ("30s" * (R - 1)) + ("i" * R)
+    SIZE = struct.calcsize(FMT)
 
-    def __init__(self, is_leaf: bool = True, count: int = 0):
+    def __init__(self, is_leaf=True, count=0):
         self.is_leaf = is_leaf
         self.count = count
-        self.keys = []       # lista de str (claves separadoras)
-        self.children = []   # lista de ints (punteros a hijo o página)
+        self.keys = []
+        self.children = []
 
 
 class DataPage:
-    # El tamaño total depende del RECORD_SIZE del record. Lo seteamos en tiempo de ejecución.
     HEADER_FMT = "ii"
     HEADER_SIZE = struct.calcsize(HEADER_FMT)
-    SIZE: int = 0           # se asigna en runtime: HEADER_SIZE + M * record_size
+    SIZE = HEADER_SIZE + M * Song.RECORD_SIZE
 
-    def __init__(self, count: int = 0, next_page: int = -1):
+    def __init__(self, count=0, next_page=-1):
         self.count = count
         self.next_page = next_page
-        self.records = []    # lista de records (objetos)
+        self.records = []
 
 
 class BPlusTreeFile:
-    """
-    Uso:
-      # Para Song (clave 'track_id'):
-      tree = BPlusTreeFile("songs.dat", "songs.idx", record_cls=Song, key_attr="track_id", key_len=30)
-
-      # Para Restaurantes (clave 'id' int -> se convierte a str para ordenar):
-      tree = BPlusTreeFile("rest.dat", "rest.idx", record_cls=Restaurantes, key_attr="id", key_len=30)
-    """
-    def __init__(
-        self,
-        datafile: str,
-        indexfile: str,
-        record_cls: Any,
-        key_attr: Optional[str] = "track_id",
-        key_len: int = 30,
-        key_to_str: Optional[Callable[[Any], str]] = None,
-    ):
+    def __init__(self, datafile: str, indexfile: str):
         self.datafile = datafile
         self.indexfile = indexfile
-
-        # === Dependencias de record (antes estaba fijo a Song) ===
-        self.Record = record_cls
-        self.record_size = int(getattr(record_cls, "RECORD_SIZE"))
-        # Cómo obtengo la clave desde un record:
-        if key_attr is not None:
-            self._key_get = lambda obj: getattr(obj, key_attr)
-        else:
-            # Si te pasaron una función por fuera, úsala; si no, intenta 'track_id'
-            self._key_get = lambda obj: getattr(obj, "track_id")
-
-        # Conversión a string (para almacenar/ordenar en nodos):
-        self._key_to_str = key_to_str or (lambda v: str(v))
-
-        # === Ajustes de formatos dependientes de key_len y record_size ===
-        self.KEY_LEN = int(key_len)
-        Node.FMT  = "?i" + (f"{self.KEY_LEN}s" * (R - 1)) + ("i" * R)
-        Node.SIZE = struct.calcsize(Node.FMT)
-        DataPage.SIZE = DataPage.HEADER_SIZE + M * self.record_size
-
         self._init_files()
+
+    def _init_files(self):
+        if not os.path.exists(self.indexfile):
+            root = Node(is_leaf=True, count=0)
+            root.children = [0]
+            self._write_node(root, 0)
+        if not os.path.exists(self.datafile):
+            self._write_page(DataPage(), 0)
 
     # ========== API Pública ==========
 
-    def search(self, key: Any):
+    def search(self, key: str):
         """Busca una clave específica"""
-        key_s = self._key_to_str(key)
-        page_idx = self._find_leaf_page(key_s, 0)
+        page_idx = self._find_leaf_page(key, 0)
         page = self._read_page(page_idx)
 
         for r in page.records[:page.count]:
-            if self._key_to_str(self._key_get(r)) == key_s:
+            if r.track_id == key:
                 return r
         return None
 
-    def rangeSearch(self, begin: Any, end: Any):
-        """Busca todas las claves en el rango [begin, end] (inclusive)"""
-        begin_s = self._key_to_str(begin)
-        end_s   = self._key_to_str(end)
-
-        page_idx = self._find_leaf_page(begin_s, 0)
+    def rangeSearch(self, begin: str, end: str):
+        """Busca todas las claves en el rango [begin, end]"""
+        page_idx = self._find_leaf_page(begin, 0)
         results = []
 
         while page_idx >= 0:
             page = self._read_page(page_idx)
             for r in page.records[:page.count]:
-                k = self._key_to_str(self._key_get(r))
-                if begin_s <= k <= end_s:
+                if begin <= r.track_id <= end:
                     results.append(r)
-                elif k > end_s:
+                elif r.track_id > end:
                     return results
             page_idx = page.next_page
 
         return results
 
-    def add(self, record):
-        """Inserta o actualiza un registro (según su clave)"""
-        key_s = self._key_to_str(self._key_get(record))
-        if not key_s:
+    def add(self, song: Song):
+        if not song.track_id:
             return
 
         # Encontrar página destino
         node_path = []
-        page_idx = self._find_leaf_page(key_s, 0, node_path)
+        page_idx = self._find_leaf_page(song.track_id, 0, node_path)
 
         # Insertar en página
         page = self._read_page(page_idx)
-        self._insert_in_page(page, record)
+        self._insert_in_page(page, song)
 
         # Verificar overflow
         if page.count > M:
@@ -127,16 +91,15 @@ class BPlusTreeFile:
         else:
             self._write_page(page, page_idx)
 
-    def remove(self, key: Any):
-        key_s = self._key_to_str(key)
-        page_idx = self._find_leaf_page(key_s, 0)
+    def remove(self, key: str):
+        page_idx = self._find_leaf_page(key, 0)
         page = self._read_page(page_idx)
 
         # Buscar y eliminar
         found = False
         new_records = []
         for r in page.records[:page.count]:
-            if self._key_to_str(self._key_get(r)) != key_s or found:
+            if r.track_id != key or found:
                 new_records.append(r)
             else:
                 found = True
@@ -149,26 +112,16 @@ class BPlusTreeFile:
         self._write_page(page, page_idx)
         return True
 
-    # ========== Inicialización de archivos ==========
-
-    def _init_files(self):
-        if not os.path.exists(self.indexfile):
-            root = Node(is_leaf=True, count=0)
-            root.children = [0]
-            self._write_node(root, 0)
-        if not os.path.exists(self.datafile):
-            self._write_page(DataPage(), 0)
-
     # ========== Métodos Internos ==========
 
-    def _find_leaf_page(self, key_s: str, node_pos: int, path=None):
-        """Encuentra la página hoja que debería contener la clave (string)"""
+    def _find_leaf_page(self, key: str, node_pos: int, path=None):
+        """Encuentra la página hoja que debería contener la clave"""
         node = self._read_node(node_pos)
 
         # Encontrar posición correcta
         pos = 0
         for i in range(node.count):
-            if key_s >= node.keys[i]:
+            if key >= node.keys[i]:
                 pos = i + 1
             else:
                 break
@@ -191,67 +144,53 @@ class BPlusTreeFile:
         else:
             # Continuar descenso
             if pos < len(node.children) and node.children[pos] >= 0:
-                return self._find_leaf_page(key_s, node.children[pos], path)
+                return self._find_leaf_page(key, node.children[pos], path)
             # Fallback: primer hijo válido
             for child in node.children:
                 if child >= 0:
-                    return self._find_leaf_page(key_s, child, path)
+                    return self._find_leaf_page(key, child, path)
             return 0
 
-    def _insert_in_page(self, page: DataPage, record):
+    def _insert_in_page(self, page: DataPage, song: Song):
         """Inserta ordenado en página de datos"""
-        key_new = self._key_to_str(self._key_get(record))
-
-        # Buscar posición
         pos = 0
         for i in range(page.count):
-            key_i = self._key_to_str(self._key_get(page.records[i]))
-            if key_i == key_new:
-                # Actualizar existente
-                page.records[i] = record
+            if page.records[i].track_id == song.track_id:
+                page.records[i] = song
                 return
-            if key_i < key_new:
+            if page.records[i].track_id < song.track_id:
                 pos = i + 1
 
-        # Insertar nuevo
-        page.records.insert(pos, record)
+        page.records.insert(pos, song)
         page.count += 1
 
     def _split_page(self, page_idx: int):
         """Divide una página llena en dos"""
         left = self._read_page(page_idx)
-        mid = (left.count + 1) // 2  # División equilibrada
+        mid = (left.count + 1) // 2
 
-        # Alocar página derecha PRIMERO
         right_idx = self._alloc_page()
-
-        # Crear página derecha con la segunda mitad
         right = DataPage(count=left.count - mid, next_page=left.next_page)
         right.records = left.records[mid:left.count]
 
-        # Actualizar izquierda con la primera mitad
         left.records = left.records[:mid]
         left.count = mid
         left.next_page = right_idx
 
-        # Escribir ambas páginas
         self._write_page(left, page_idx)
         self._write_page(right, right_idx)
 
-        # Clave separadora: primera clave del lado derecho
-        sep_key = self._key_to_str(self._key_get(right.records[0]))
-        return right_idx, sep_key
+        return right_idx, right.records[0].track_id
 
-    def _insert_in_index(self, path, key_s: str, page_idx: int):
+    def _insert_in_index(self, path, key: str, page_idx: int):
         """Inserta clave en el índice, manejando splits si es necesario"""
         if not path:
-            # Crear nueva raíz
             old_root = self._read_node(0)
             new_root_idx = self._alloc_node()
             self._write_node(old_root, new_root_idx)
 
             new_root = Node(is_leaf=False, count=1)
-            new_root.keys = [key_s]
+            new_root.keys = [key]
             new_root.children = [new_root_idx, page_idx]
             self._write_node(new_root, 0)
             return
@@ -259,19 +198,17 @@ class BPlusTreeFile:
         node_pos, child_pos = path.pop()
         node = self._read_node(node_pos)
 
-        # Insertar clave y puntero
         insert_pos = 0
         for i in range(node.count):
-            if key_s >= node.keys[i]:
+            if key >= node.keys[i]:
                 insert_pos = i + 1
             else:
                 break
 
-        node.keys.insert(insert_pos, key_s)
+        node.keys.insert(insert_pos, key)
         node.children.insert(child_pos + 1, page_idx)
         node.count += 1
 
-        # Verificar overflow
         if node.count <= R - 1:
             self._write_node(node, node_pos)
         else:
@@ -282,18 +219,15 @@ class BPlusTreeFile:
         """Divide un nodo índice lleno"""
         mid = node.count // 2
 
-        # Nodo derecho
         right = Node(is_leaf=node.is_leaf, count=node.count - mid - 1)
         right.keys = node.keys[mid + 1:]
         right.children = node.children[mid + 1:]
 
-        # Actualizar nodo izquierdo
         up_key = node.keys[mid]
         node.keys = node.keys[:mid]
         node.children = node.children[:mid + 1]
         node.count = mid
 
-        # Escribir
         right_idx = self._alloc_node()
         self._write_node(node, node_pos)
         self._write_node(right, right_idx)
@@ -316,22 +250,19 @@ class BPlusTreeFile:
 
         node = Node(is_leaf, count)
         node.keys = []
-        # claves como strings (decodificadas y strip de nulls/espacios)
         for i in range(count):
-            raw = unpacked[2 + i]
-            key = raw.decode(errors="ignore").rstrip('\x00').strip()
+            key = unpacked[2 + i].decode().rstrip('\x00').strip()
             if key:
                 node.keys.append(key)
 
-        node.children = list(unpacked[2 + (R - 1):2 + (R - 1) + R])[:count + 1]
+        node.children = list(unpacked[2 + R - 1:2 + R - 1 + R])[:count + 1]
         return node
 
     def _write_node(self, node: Node, pos: int):
-        # Empaquetar claves a KEY_LEN bytes
-        keys = [b'\x00' * self.KEY_LEN] * (R - 1)
+        keys = [b'\x00' * KEY_LEN] * (R - 1)
         for i in range(min(node.count, R - 1)):
-            kb = (node.keys[i] or "").encode()[:self.KEY_LEN]
-            keys[i] = kb + b'\x00' * (self.KEY_LEN - len(kb))
+            k = node.keys[i].encode()[:KEY_LEN]
+            keys[i] = k + b'\x00' * (KEY_LEN - len(k))
 
         children = (node.children + [-1] * R)[:R]
         packed = struct.pack(Node.FMT, node.is_leaf, node.count, *keys, *children)
@@ -353,21 +284,20 @@ class BPlusTreeFile:
                 return DataPage()
 
             count, next_page = struct.unpack(DataPage.HEADER_FMT, header)
-            raw = f.read(M * self.record_size)
+            raw = f.read(M * Song.RECORD_SIZE)
 
         page = DataPage(count, next_page)
         for i in range(min(count, M)):
-            start = i * self.record_size
-            end = start + self.record_size
+            start = i * Song.RECORD_SIZE
+            end = start + Song.RECORD_SIZE
             chunk = raw[start:end]
 
-            if len(chunk) == self.record_size:
+            if len(chunk) == Song.RECORD_SIZE:
                 try:
-                    rec = self.Record.unpack(chunk)
-                    if rec:
-                        page.records.append(rec)
+                    song = Song.unpack(chunk)
+                    if song:
+                        page.records.append(song)
                 except Exception:
-                    # Skip registros corruptos
                     continue
 
         page.count = len(page.records)
@@ -377,10 +307,10 @@ class BPlusTreeFile:
         page.count = min(page.count, M, len(page.records))
         header = struct.pack(DataPage.HEADER_FMT, page.count, page.next_page)
 
-        body = bytearray(M * self.record_size)
+        body = bytearray(M * Song.RECORD_SIZE)
         for i in range(page.count):
             chunk = page.records[i].pack()
-            body[i * self.record_size:(i + 1) * self.record_size] = chunk
+            body[i * Song.RECORD_SIZE:(i + 1) * Song.RECORD_SIZE] = chunk
 
         with open(self.datafile, "r+b" if os.path.exists(self.datafile) else "wb") as f:
             f.seek(pos * DataPage.SIZE)

@@ -7,14 +7,14 @@ import sys
 import random
 
 # Configuración
-CSV_PATH = r".\data\datasets\clean_spotify_songs.csv"
+CSV_PATH = r"app/data/datasets/spotify_songs.csv"
 DATA_FILE = "test_songs.dat"
 INDEX_FILE = "test_songs.idx"
 NUM_RECORDS = 3000
 
 # Importar módulos necesarios
 try:
-    from data.records.song import Song
+    from app.data.records.song import Song
     from app.engines.bplustree import BPlusTreeFile
 except ImportError as e:
     print(f"ERROR: No se pudo importar módulos necesarios: {e}")
