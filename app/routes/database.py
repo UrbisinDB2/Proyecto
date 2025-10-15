@@ -7,6 +7,7 @@ import csv, inspect
 from app.models.parsed_query import ParsedQuery
 from app.engines.factory import ENGINE_BUILDERS
 from app.settings import DATA_ROOT, BPLUSTREE_DIR
+from app.engines.bplustree import BPlusTreeFile
 from app.data.records.song import Song
 
 router = APIRouter()
@@ -210,14 +211,23 @@ def _import_songs_from_csv(csv_path: Path, index: str) -> dict:
             except Exception:
                 skipped += 1
 
-    return {
-        "table": table,
-        "engine": index,
-        "inserted": inserted,
-        "skipped": skipped,
-        "datafile": (BPLUSTREE_DIR / "song.dat").as_posix(),
-        "indexfile": (BPLUSTREE_DIR / "song.idx").as_posix(),
-    }
+        return {
+            "table": table,
+            "engine": index,
+            "inserted": inserted,
+            "skipped": skipped,
+            "datafile": (BPLUSTREE_DIR / "song.dat").as_posix(),
+            "indexfile": (BPLUSTREE_DIR / "song.idx").as_posix(),
+        }
+
+def _return_all_songs() -> list[Song]:
+    pass
+
+def _return_song(key: str) -> Song:
+    pass
+
+def _return_range_search(begin: str, end: str) -> list[Song]:
+    pass
 
 @router.post("/", response_class=JSONResponse)
 async def run_query(query: ParsedQuery):
@@ -234,7 +244,20 @@ async def run_query(query: ParsedQuery):
 
         return JSONResponse(status_code=200, content=f'Created record: {schema["table"]}')
     elif op == 1:
-        pass
+        if query.where:
+            if query.where["type"] == "eq":
+                pass
+                song = _return_song(query.where["value"])
+
+                return JSONResponse(status_code=200, content=song)
+            elif query.where["type"] == "between":
+                pass
+                songs = _return_range_search(query.where["from"], query.where["to"])
+
+                return JSONResponse(status_code=200, content=songs)
+        else:
+            songs = _return_all_songs()
+            return JSONResponse(status_code=200, content=songs)
     elif op == 2:
         pass
     elif op == 3:
@@ -244,6 +267,7 @@ async def run_query(query: ParsedQuery):
         if index["type"] == "bplustree":
             csv_path = _csv_path_for_song(q.get("file"))
             stats = _import_songs_from_csv(csv_path, str(index["type"]))
+
             return JSONResponse(status_code=200, content=stats)
 
     elif op == 4:
