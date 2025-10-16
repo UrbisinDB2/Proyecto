@@ -308,16 +308,12 @@ def _return_range_search(begin: str, end: str, table: str = "song", engine_type:
         print(f"Error en range search [{begin}, {end}]: {e}")
         return []
 
-def _delete_song(key: str, table: str = "song", engine_type: str = "bplustree") -> None:
-    try:
-        engine = _get_engine_for_table(table, engine_type)
+def _delete_song(key: str, table: str = "song", engine_type: str = "bplustree") -> bool:
+    engine = _get_engine_for_table(table, engine_type)
+    return engine.remove(key)
 
-        engine.delete(key)
-
-        return None
-    except Exception as e:
-        print(f"Error deleting {key}: {e}")
-        return None
+def _insert_song(key: str, table: str = "song", engine_type: str = "bplustree") -> bool:
+    pass
 
 @router.post("/", response_class=JSONResponse)
 async def run_query(query: ParsedQuery):
@@ -414,5 +410,21 @@ async def run_query(query: ParsedQuery):
             return JSONResponse(status_code=200, content=stats)
 
     elif op == 4:
+        table = query.table or "song"
+        engine_type = "bplustree"
 
-        try:
+        where_dict = q.get("where", {})
+
+        if where_dict.get("type") != "eq":
+            return JSONResponse(status_code=400, content={
+                "message": "DELETE only supports WHERE with exact match"
+            })
+        key = str(where_dict["value"])
+        success = _delete_song(key, table, engine_type)
+        status = 200 if success else 404
+
+        return JSONResponse(status_code=status, content={
+            "message": f"Record '{key}' {'deleted' if success else 'not found'}",
+            "deleted": success,
+            "engine": engine_type
+        })
