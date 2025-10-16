@@ -7,7 +7,6 @@ import csv, inspect
 from app.models.parsed_query import ParsedQuery
 from app.engines.factory import ENGINE_BUILDERS
 from app.settings import DATA_ROOT, BPLUSTREE_DIR
-from app.engines.bplustree import BPlusTreeFile
 from app.data.records.song import Song
 
 router = APIRouter()
@@ -220,18 +219,110 @@ def _import_songs_from_csv(csv_path: Path, index: str) -> dict:
             "indexfile": (BPLUSTREE_DIR / "song.idx").as_posix(),
         }
 
-def _return_all_songs() -> list[Song]:
-    pass
+def _get_engine_for_table(table: str, engine_type: str = "bplustree"):
+    spec = {"type": engine_type, "key_attr": "track_id", "key_len": 30}
 
-def _return_song(key: str) -> Song:
-    pass
+    if engine_type not in ENGINE_BUILDERS:
+        raise ValueError(f"Engine type '{engine_type}' not supported")
 
-def _return_range_search(begin: str, end: str) -> list[Song]:
-    pass
+    return ENGINE_BUILDERS[engine_type](table, spec)
+
+def _song_to_dict(song: Song) -> dict:
+    return {
+        "track_id": song.track_id,
+        "track_name": song.track_name,
+        "track_artist": song.track_artist,
+        "track_popularity": song.track_popularity,
+        "track_album_id": song.track_album_id,
+        "track_album_name": song.track_album_name,
+        "track_album_release_date": song.track_album_release_date,
+        "acousticness": song.acousticness,
+        "instrumentalness": song.instrumentalness,
+        "duration_ms": song.duration_ms
+    }
+
+def _return_all_songs(table: str = "song", engine_type: str = "bplustree") -> list[dict]:
+    try:
+        engine = _get_engine_for_table(table, engine_type)
+        results = []
+
+        # Método genérico: recorrer páginas si el engine lo soporta
+        if hasattr(engine, '_read_page'):
+            page_idx = 0
+            visited = set()
+
+            while page_idx >= 0 and page_idx not in visited:
+                visited.add(page_idx)
+                page = engine._read_page(page_idx)
+
+                for song in page.records[:page.count]:
+                    results.append(_song_to_dict(song))
+
+                page_idx = page.next_page
+
+        elif hasattr(engine, 'scan'):
+            songs = engine.scan()
+            results = [_song_to_dict(s) for s in songs]
+
+        elif hasattr(engine, 'getAll'):
+            songs = engine.getAll()
+            results = [_song_to_dict(s) for s in songs]
+
+        else:
+            raise NotImplementedError(f"Engine '{engine_type}' doesn't support full scan")
+
+        return results
+
+    except Exception as e:
+        print(f"Error al leer todas las canciones: {e}")
+        return []
+
+def _return_song(key: str, table: str = "song", engine_type: str = "bplustree") -> dict | None:
+    try:
+        engine = _get_engine_for_table(table, engine_type)
+
+        song = engine.search(key)
+
+        if song:
+            return _song_to_dict(song)
+
+        return None
+
+    except Exception as e:
+        print(f"Error searching song {key}: {e}")
+        return None
+
+def _return_range_search(begin: str, end: str, table: str = "song", engine_type: str = "bplustree") -> list[dict]:
+    try:
+        engine = _get_engine_for_table(table, engine_type)
+
+        if hasattr(engine, 'rangeSearch'):
+            songs = engine.rangeSearch(begin, end)
+            return [_song_to_dict(s) for s in songs]
+
+        else:
+            all_songs = _return_all_songs(table, engine_type)
+            return [s for s in all_songs if begin <= s["track_id"] <= end]
+
+    except Exception as e:
+        print(f"Error en range search [{begin}, {end}]: {e}")
+        return []
+
+def _delete_song(key: str, table: str = "song", engine_type: str = "bplustree") -> None:
+    try:
+        engine = _get_engine_for_table(table, engine_type)
+
+        engine.delete(key)
+
+        return None
+    except Exception as e:
+        print(f"Error deleting {key}: {e}")
+        return None
 
 @router.post("/", response_class=JSONResponse)
 async def run_query(query: ParsedQuery):
     op = query.op
+    q = dict(query)
 
     if op == 0:
         schema = dict(query)
@@ -244,24 +335,76 @@ async def run_query(query: ParsedQuery):
 
         return JSONResponse(status_code=200, content=f'Created record: {schema["table"]}')
     elif op == 1:
-        if query.where:
-            if query.where["type"] == "eq":
-                pass
-                song = _return_song(query.where["value"])
+        table = query.table or "song"
+        # Detectar el tipo de engine disponible para esta tabla
+        # Por ahora asumimos bplustree, pero podríamos leer metadata
+        engine_type = "bplustree"
 
-                return JSONResponse(status_code=200, content=song)
-            elif query.where["type"] == "between":
-                pass
-                songs = _return_range_search(query.where["from"], query.where["to"])
+        # TODO: En el futuro, leer de metadata qué engine usa esta tabla
+        # metadata_file = TABLES_ROOT / f"{table}_metadata.json"
+        # if metadata_file.exists():
+        #     with open(metadata_file) as f:
+        #         meta = json.load(f)
+        #         engine_type = meta.get("engine", "bplustree")
 
-                return JSONResponse(status_code=200, content=songs)
-        else:
-            songs = _return_all_songs()
-            return JSONResponse(status_code=200, content=songs)
+        try:
+            if q["where"]:
+                if q["where"]["type"] == "eq":
+                    key = str(q["where"]["value"])
+                    song = _return_song(key, table, engine_type)
+
+                    if song:
+                        return JSONResponse(status_code=200, content={
+                            "result": [song],
+                            "count": 1,
+                            "engine": engine_type
+                        })
+                    else:
+                        return JSONResponse(status_code=404, content={
+                            "message": "Record not found",
+                            "result": [],
+                            "count": 0,
+                            "engine": engine_type
+                        })
+
+                elif q["where"]["type"] == "between":
+                    begin = str(q["where"]["from"])
+                    end = str(q["where"]["to"])
+                    songs = _return_range_search(begin, end, table, engine_type)
+
+                    return JSONResponse(status_code=200, content={
+                        "result": songs,
+                        "count": len(songs),
+                        "engine": engine_type
+                    })
+
+                else:
+                    return JSONResponse(status_code=400, content={
+                        "message": f"WHERE type '{q["where"]['type']}' not supported"
+                    })
+
+            else:
+                songs = _return_all_songs(table, engine_type)
+                return JSONResponse(status_code=200, content={
+                    "result": songs,
+                    "count": len(songs),
+                    "engine": engine_type
+                })
+
+        except NotImplementedError as e:
+            return JSONResponse(status_code=501, content={
+                "message": str(e),
+                "engine": engine_type
+            })
+
+        except Exception as e:
+            return JSONResponse(status_code=500, content={
+                "message": f"Error executing SELECT: {str(e)}",
+                "engine": engine_type
+            })
     elif op == 2:
         pass
     elif op == 3:
-        q = dict(query)
         index = q["index"]
 
         if index["type"] == "bplustree":
@@ -271,4 +414,5 @@ async def run_query(query: ParsedQuery):
             return JSONResponse(status_code=200, content=stats)
 
     elif op == 4:
-        pass
+
+        try:
