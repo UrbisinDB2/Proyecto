@@ -31,10 +31,9 @@ class Directory:
             self.pointers = pointers
 
 class ExtendibleHashingFile:
-    def __init__(self, datafile: str, dirfile: str, index_key: str = 'track_id'):
+    def __init__(self, datafile: str, dirfile: str):
         self.datafile = datafile
         self.dirfile = dirfile
-        self.index_key = index_key
         self._init_files()
 
     def _init_files(self):
@@ -58,7 +57,6 @@ class ExtendibleHashingFile:
         while bucket_pos != -1:
             bucket = self._read_bucket(bucket_pos)
             for record in bucket.records:
-                record_key = getattr(record, self.index_key)
                 if record.track_id == key:
                     return record
             bucket_pos = bucket.next_overflow
@@ -67,7 +65,6 @@ class ExtendibleHashingFile:
 
     def add(self, song: Song):
         """Agrega un nuevo registro de canción."""
-        key_value = getattr(song, self.index_key)
         if not song.track_id:
             return
 
@@ -90,8 +87,7 @@ class ExtendibleHashingFile:
             
             record_to_remove = None
             for record in bucket.records:
-                record_key = getattr(record, self.index_key)
-                if record_key == key:
+                if record.track_id == key:
                     record_to_remove = record
                     break
             
@@ -125,13 +121,12 @@ class ExtendibleHashingFile:
         current_pos = bucket_pos
         last_bucket = None
         last_bucket_pos = -1 # Necesitamos la posición del último bucket
-        song_key = getattr(song, self.index_key)
         
         while current_pos != -1:
             bucket = self._read_bucket(current_pos)
             
             for i, record in enumerate(bucket.records):
-                if getattr(record, self.index_key) == song_key:
+                if record.track_id == song.track_id:
                     bucket.records[i] = song 
                     self._write_bucket(bucket, current_pos)
                     return
@@ -207,8 +202,7 @@ class ExtendibleHashingFile:
         
         # Redistribución de todos los registros
         for record in all_records_to_distribute:
-            key_value = getattr(record, self.index_key)
-            target_pos = self._get_bucket_pos(key_value, current_directory)
+            target_pos = self._get_bucket_pos(record.track_id, current_directory)
 
             # Asignar al bucket correcto
             target_bucket = old_bucket if target_pos == old_bucket_pos else new_bucket

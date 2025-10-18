@@ -1,5 +1,5 @@
 from typing import Any
-from app.settings import BPLUSTREE_DIR
+from app.settings import BPLUSTREE_DIR,EXTHASH_DIR
 
 def build_bplustree(table: str, spec: dict):
     from app.engines.bplustree import BPlusTreeFile
@@ -20,7 +20,7 @@ def build_rtree(table: str, record_cls: Any, spec: dict):
     raise NotImplementedError("RTree no implementado aún")
 
 def build_exthashing(table: str, record_cls: Any, spec: dict):
-    raise NotImplementedError("ExtHashing no implementado aún")
+    raise NotImplementedError("RTree no implementado aún")    
 
 def build_seqfile(table: str, record_cls: Any, spec: dict):
     raise NotImplementedError("SeqFile no implementado aún")

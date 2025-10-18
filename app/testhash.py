@@ -47,7 +47,7 @@ def load_songs_from_csv(filename, limit=None):
     print(f"Carga completa. {len(songs)} registros únicos cargados.")
     return songs
 
-# --- Funciones de Prueba (Corregidas para la versión de claves únicas) ---
+# --- Funciones de Prueba ---
 
 def test_basic_insertion_and_search():
     """Prueba la inserción y búsqueda básica usando la clave única 'track_id'."""
@@ -56,7 +56,7 @@ def test_basic_insertion_and_search():
     songs = load_songs_from_csv(CSV_FILE, limit=50)
     if not songs: return
 
-    hash_index = ExtendibleHashingFile(DATA_FILE, DIR_FILE, index_key='track_id')
+    hash_index = ExtendibleHashingFile(DATA_FILE, DIR_FILE)
     
     for song in songs:
         hash_index.add(song)
@@ -65,7 +65,6 @@ def test_basic_insertion_and_search():
     song_to_find = random.choice(songs)
     print(f"Buscando la canción con ID: {song_to_find.track_id} (Nombre: '{song_to_find.track_name}')")
     
-    # CORRECCIÓN: 'search' ahora devuelve un objeto Song o None.
     found_song = hash_index.search(song_to_find.track_id)
     
     assert found_song is not None, "Error: La canción no fue encontrada."
@@ -88,7 +87,7 @@ def test_remove_and_update():
     songs = load_songs_from_csv(CSV_FILE, limit=20)
     if not songs: return
     
-    hash_index = ExtendibleHashingFile(DATA_FILE, DIR_FILE, index_key='track_id')
+    hash_index = ExtendibleHashingFile(DATA_FILE, DIR_FILE)
     
     for song in songs:
         hash_index.add(song)
@@ -124,7 +123,7 @@ def test_stress_splits():
     songs = load_songs_from_csv(CSV_FILE, limit=1000)
     if not songs: return
 
-    hash_index = ExtendibleHashingFile(DATA_FILE, DIR_FILE, index_key='track_id')
+    hash_index = ExtendibleHashingFile(DATA_FILE, DIR_FILE)
     
     print(f"Insertando {len(songs)} registros para forzar la expansión...")
     for song in songs:
