@@ -1,5 +1,6 @@
 from typing import Any
-from app.settings import BPLUSTREE_DIR, EXTHASH_DIR
+from app.settings import BPLUSTREE_DIR, EXTHASH_DIR, SEQFILE_DIR
+
 
 def build_bplustree(table: str):
     from app.engines.bplustree import BPlusTreeFile
@@ -31,7 +32,15 @@ def build_exthashing(table: str):
     )
 
 def build_seqfile(table: str):
-    raise NotImplementedError("SeqFile no implementado aún")
+    from app.engines.seqfile import SequentialFile
+
+    mainfile = (SEQFILE_DIR / f"main.dat").as_posix()
+    auxfile = (SEQFILE_DIR / f"aux.dat").as_posix()
+
+    return SequentialFile(
+        main_path=mainfile,
+        aux_path=auxfile
+    )
 
 ENGINE_BUILDERS = {
     "bplustree": build_bplustree,
