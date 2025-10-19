@@ -3,6 +3,7 @@ from pydantic import BaseModel
 
 class ParsedQuery(BaseModel):
     op: int
+    idx: Optional[str] = None
     table: Optional[str] = None
     columns: Optional[List[str]] = None
     where: Optional[Dict[str, Any]] = None

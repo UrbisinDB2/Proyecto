@@ -164,8 +164,7 @@ def _csv_path_for_song(q_file: str | None) -> Path:
 
 def _import_songs_from_csv(csv_path: Path, index: str) -> dict:
     table = "song"
-    spec = {"type": index, "key_attr": "track_id", "key_len": 30}
-    engine = ENGINE_BUILDERS[index](table, spec)
+    engine = ENGINE_BUILDERS[index](table)
 
     record_cls = Song
     params = [p.name for p in inspect.signature(record_cls.__init__).parameters.values() if p.name != "self"]
@@ -222,8 +221,7 @@ def _import_songs_from_csv(csv_path: Path, index: str) -> dict:
 
 
 def _get_engine_for_table(table: str, engine_type: str = "bplustree"):
-    spec = {"type": engine_type, "key_attr": "track_id", "key_len": 30}
-    return ENGINE_BUILDERS[engine_type](table, spec)
+    return ENGINE_BUILDERS[engine_type](table)
 
 
 def _song_to_dict(song: Song) -> dict:
@@ -309,7 +307,7 @@ async def run_query(query: ParsedQuery):
 
     elif op == 1:  # SELECT
         table = query.table or "song"
-        engine_type = "bplustree"
+        engine_type = query.idx
 
         if q.get("where"):
             if q["where"]["type"] == "eq":
@@ -350,7 +348,7 @@ async def run_query(query: ParsedQuery):
 
     elif op == 2:  # INSERT
         table = query.table or "song"
-        engine_type = "bplustree"
+        engine_type = query.idx
         values = q.get("values", [])
 
         inserted = 0
@@ -374,7 +372,7 @@ async def run_query(query: ParsedQuery):
 
     elif op == 4:  # DELETE
         table = query.table or "song"
-        engine_type = "bplustree"
+        engine_type = query.idx
         where_dict = q.get("where", {})
 
         if where_dict.get("type") != "eq":

@@ -1,5 +1,5 @@
 import axios from "axios";
-const PARSER_URL = "https://localhost:8000/parser";
+const PARSER_URL = "http://localhost:8000/parser";
 
 export const useParser = () => {
 

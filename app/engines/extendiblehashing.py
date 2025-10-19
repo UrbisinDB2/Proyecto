@@ -57,6 +57,7 @@ class ExtendibleHashingFile:
         while bucket_pos != -1:
             bucket = self._read_bucket(bucket_pos)
             for record in bucket.records:
+                print(record.track_id)
                 if record.track_id == key:
                     return record
             bucket_pos = bucket.next_overflow
