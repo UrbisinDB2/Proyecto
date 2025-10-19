@@ -1,6 +1,7 @@
 import axios from "axios";
 
-const PARSER_URL = "http://localhost:8000/parser"; // ⚠️ cambia si usas otro puerto
+const BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000";
+const PARSER_URL = `${BASE_URL}/parser`;
 
 export const useParser = () => {
     const parseQuery = async (text) => {
