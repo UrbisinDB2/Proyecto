@@ -465,4 +465,38 @@ Mantiene contadores de niveles para paréntesis, corchetes y comillas, solo divi
 
 ## Pruebas de uso y presentación
 
+1. Imagenes de docker luego de realizar el compose up.
+
+![Imagen 1](./images/img1.png)
+
+2. Contenedores de docker corriendo.
+
+![Imagen 2](./images/img2.png)
+
+3. Frontend
+
+![Imagen 3](./images/img3.png)
+
+4. Backend
+
+![Imagen 4](./images/img4.png)
+
+5. Pruebas de select
+
+![Imagen 5](./images/img5.png)
+
+![Imagen 6](./images/img6.png)
+
+![Imagen 7](./images/img7.png)
+
+6. Pruebas de delete
+
+![Imagen 8](./images/img8.png)
+
+7. Pruebas de insert
+
+![Imagen 9](./images/img9.png)
+
+Explicación a detalle en el video.
+
 ## Link del video: 
