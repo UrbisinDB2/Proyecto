@@ -7,7 +7,7 @@
 | Participación | Alumno                                     |
 |---------------|--------------------------------------------|
 | 100%          | Sebastian Alonso Urbina Claros (202210450) |
-| 100%          | Anthony Raul Roca Condori ()               |
+| 100%          | Anthony Raul Roca Condori (201720045)      |
 
 ## Introducción
 
@@ -488,7 +488,7 @@ Gráfico 2: Tiempo de Búsqueda
 - **B+ Tree**: Su rendimiento es excelente. Gracias a su estructura ancha y poco profunda, una búsqueda solo requiere leer unos pocos nodos para localizar cualquier registro. Es un modelo de eficiencia en accesos a disco dirigidos.
 
 Gráfico 3: Tiempo Promedio por Inserción
-![Imagen 12](./images/3_average_inserción_time.png)
+![Imagen 12](./images/3_average_insercion_time.png)
 
 #### **Análisis de Resultados**
 
@@ -500,7 +500,7 @@ Gráfico 3: Tiempo Promedio por Inserción
 
 
 Gráfico 4: Tiempo Promedio por Eliminación
-![Imagen 13](./images/4_average_eliminación_time.png)
+![Imagen 13](./images/4_average_eliminacion_time.png)
 
 #### **Análisis de Resultados**
 
