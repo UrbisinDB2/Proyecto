@@ -499,4 +499,4 @@ Mantiene contadores de niveles para paréntesis, corchetes y comillas, solo divi
 
 Explicación a detalle en el video.
 
-## Link del video: [Video del Proyecto][https://drive.google.com/file/d/1k4rDznILHCyjXaQK_HanjRdoKrFoZCET/view?usp=sharing]
+## Link del video: [Video del Proyecto](https://drive.google.com/file/d/1k4rDznILHCyjXaQK_HanjRdoKrFoZCET/view?usp=sharing)
