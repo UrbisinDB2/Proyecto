@@ -120,7 +120,7 @@ def test_stress_splits():
     """Prueba de estrés insertando muchos registros para forzar splits y duplicaciones."""
     print("\n--- INICIANDO PRUEBA DE ESTRÉS: Splits con Claves Únicas ---")
     
-    songs = load_songs_from_csv(CSV_FILE, limit=1000)
+    songs = load_songs_from_csv(CSV_FILE, limit=5000)
     if not songs: return
 
     hash_index = ExtendibleHashingFile(DATA_FILE, DIR_FILE)

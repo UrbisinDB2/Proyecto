@@ -66,22 +66,21 @@ Sequential File es una estructura de datos que organiza los registros de forma s
 #### Características
 - **Archivo principal**: Registros ordenados por clave primaria
 - **Archivo auxiliar**: Almacena nuevas inserciones temporalmente
-- **Punteros de enlace**: Conectan registros del archivo principal con el auxiliar
 - **Reorganización periódica**: Fusiona ambos archivos cuando el auxiliar crece
 
 #### Operaciones
 
 **Búsqueda**: 
 - Búsqueda binaria en archivo principal: O(log n)
-- Búsqueda secuencial en archivo auxiliar: O(k), donde k es el tamaño del auxiliar
+- Búsqueda secuencial en archivo auxiliar: O(log k), donde k es el tamaño del auxiliar
 
 **Inserción**:
 - Siempre en archivo auxiliar: O(1)
-- Actualización de punteros: O(log n)
+- Cuando realiza reconstrucción: O(N + k)
 
 **Eliminación**:
-- Marca registro como eliminado: O(log n)
-- No elimina físicamente hasta reorganización
+- Marca registro como eliminado: O(log n) (En archivo principal), O(k) en archivo aux (Borrado físico)
+- En el archivo principal no elimina físicamente hasta reorganización
 
 ### Extendible Hashing
 
@@ -252,7 +251,7 @@ R-Tree es una estructura de árbol balanceado especializada en datos espaciales 
 
 | Operación | Sequential File | Extendible Hashing | B+ Tree |
 |-----------|----------------|-------------------|---------|
-| **Búsqueda** | O(log n) + O(k) | O(1) promedio | O(log_R n) |
+| **Búsqueda** | O(log n) + O(log k) | O(1) promedio | O(log_R n) |
 | **Inserción** | O(1) auxiliar | O(1) promedio | O(log_R n) |
 | **Eliminación** | O(log n) | O(1) promedio | O(log_R n) |
 | **Range Query** | O(log n + k) | O(n) | O(log_R n + k) |
@@ -462,6 +461,64 @@ Mantiene contadores de niveles para paréntesis, corchetes y comillas, solo divi
 | 4 | DELETE |
 
 ## Resultados Experimentales
+
+A continuación, se presenta un análisis del rendimiento experimental de tres técnicas de indexación de archivos: Archivo Secuencial, Árbol B+ y Hashing Extensible. Se evaluan la carga inicial, búsqueda, inserción y eliminación.
+
+Gráfico 1: Rendimiento de Carga Inicial
+![Imagen 10](./images/1_bulk_load_performance.png)
+
+#### **Análisis de Resultados**
+Los resultados son consistentes con la teoría y las implementaciones utilizadas:
+
+- **Sequential File**: El rendimiento superior se debe al uso de una operación de carga masiva (bulk_load). Este método ordena todos los registros en memoria y luego los escribe en el disco en una única pasada secuencial. La escritura secuencial es la operación de I/O más rápida posible, lo que explica su eficiencia abrumadora para poblar la estructura desde cero.
+
+- **Extendible Hashing**: Su curva lineal demuestra la eficiencia de su complejidad de inserción, que es O(1) en promedio. Cada add implica un cálculo de hash y una escritura en un bucket, operaciones muy rápidas y localizadas que escalan de manera predecible.
+
+- **B+ Tree**: Aunque su complejidad de inserción es un eficiente O(logN), requiere atravesar el árbol desde la raíz hasta una hoja para cada uno de los registros. La suma de estos recorridos logarítmicos es intrínsecamente más costosa que el acceso directo del hashing, resultando en un tiempo total mayor para la carga uno por uno.
+
+Gráfico 2: Tiempo de Búsqueda
+![Imagen 11](./images/2_search_performance.png)
+
+#### **Análisis de Resultados**
+
+- **Sequential File**: El bajo rendimiento se debe a una ineficiencia en la implementación original. Por cada búsqueda que falla en el archivo principal, el código procedía a leer el archivo auxiliar completo del disco. Repetir esta costosa operación de I/O múltiples veces crea un cuello de botella. Con una estrategia de caché en memoria para el archivo auxiliar, su rendimiento mejoraría bastante.
+
+- **Extendible Hashing**: Es el rey de la velocidad para búsquedas por clave. Tras la corrección que mantiene el directorio en memoria, una búsqueda implica un cálculo de hash (instantáneo) y típicamente una sola lectura de disco para obtener el bucket. Es el epítome del acceso directo.
+
+- **B+ Tree**: Su rendimiento es excelente. Gracias a su estructura ancha y poco profunda, una búsqueda solo requiere leer unos pocos nodos para localizar cualquier registro. Es un modelo de eficiencia en accesos a disco dirigidos.
+
+Gráfico 3: Tiempo Promedio por Inserción
+![Imagen 12](./images/3_average_inserción_time.png)
+
+#### **Análisis de Resultados**
+
+- **Sequential File**:  La lentitud se debe a que, para mantener el orden en el archivo auxiliar, la implementación reescribe el archivo completo en el disco con cada inserción. Realizar 100 inserciones implica 100 operaciones de reescritura, lo cual es muy ineficiente.
+
+- **Extendible Hashing**: Nuevamente, su complejidad promedio de O(1) le da la ventaja. La mayoría de las inserciones solo requieren añadir un registro a un bucket existente, implicando una única operación de escritura en disco.
+
+- **B+ Tree**: El costo de O(logN) se mantiene bajo y predecible. La operación consiste en un recorrido rápido por el árbol y una escritura en una página de datos, lo cual es muy eficiente.
+
+
+Gráfico 4: Tiempo Promedio por Eliminación
+![Imagen 13](./images/4_average_eliminación_time.png)
+
+#### **Análisis de Resultados**
+
+- **Sequential File**: El buen rendimiento se debe al uso de borrado lógico en el archivo principal. Esta operación consiste en una búsqueda binaria (O(logN)) para encontrar la posición y una única escritura para cambiar un bit de estado. Es más simple y rápido que mantener la integridad estructural del B+ Tree.
+
+- **Extendible Hashing**: La eliminación es prácticamente la operación inversa de la búsqueda. Con una complejidad promedio de O(1), requiere un mínimo de I/O para localizar y eliminar el registro del bucket.
+
+- **B+ Tree**: La eliminación es O(logN), pero puede ser más compleja que la inserción. Además de borrar, el árbol debe verificar si la página queda por debajo de su ocupación mínima, lo que podría desencadenar operaciones de fusión o redistribución con páginas vecinas, añadiendo un pequeño costo de I/O adicional.
+
+### **Conclusiones generales**
+Los resultados experimentales validan los fundamentos teóricos de cada estructura y subrayan la importancia crítica de una implementación eficiente en el manejo de operaciones de disco (I/O).
+
+- **Sequential File**: Es imbatible para la carga masiva inicial gracias a su eficiente escritura secuencial. Sin embargo para esta implementación en específico las estrategias de reescritura completa del archivo auxiliar en cada inserción y su relectura completa durante la búsqueda demostraron ser cuellos de botella que lo hicieron menos competitivo que las otras estructuras. Se tomará en cuenta este detalle.
+
+- **Extendible Hashing**: Es la estructura superior para operaciones puntuales (búsqueda, inserción, eliminación) de alto rendimiento, siempre que su directorio se gestione eficientemente en memoria.
+
+- **B+ Tree**: Se consolida como la opción más equilibrada y robusta. Ofrece un rendimiento excelente y predecible en todas las operaciones, justificando su uso generalizado en sistemas de bases de datos.
+
 
 ## Pruebas de uso y presentación
 
